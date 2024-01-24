@@ -487,12 +487,12 @@ def train():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     if model_args.vision_tower is not None:
-        model = LlavaLlamaForCausalLM.from_pretrained(
+        model = LlavaMistralForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             cache_dir=training_args.cache_dir,
         )
     else:
-        model = transformers.LlamaForCausalLM.from_pretrained(
+        model = transformers.MistralForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             cache_dir=training_args.cache_dir,
         )
