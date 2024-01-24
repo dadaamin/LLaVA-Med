@@ -1,1 +1,2 @@
 from .llava import LlavaLlamaForCausalLM
+from .llava_mistral import LlavaMistralForCausalLM
