@@ -7,6 +7,7 @@ class SeparatorStyle(Enum):
     """Different separator style."""
     SINGLE = auto()
     TWO = auto()
+    ZEPHYR = auto()
 
 
 @dataclasses.dataclass
@@ -45,7 +46,15 @@ class Conversation:
                 else:
                     ret += role + ":"
             return ret
-        else:
+        elif self.sep_style == SeparatorStyle.ZEPHYR:
+            ret = f"<|system|>\n{self.system}{self.sep}\n"
+            for role, message in self.messages:
+                if message:
+                    if type(message) is tuple:
+                        message, _, _ = message
+                    ret += f"{role}\n{message}{self.sep}\n"
+            return ret
+        else:    
             raise ValueError(f"Invalid style: {self.sep_style}")
 
     def append_message(self, role, message):
@@ -306,6 +315,20 @@ conv_llava_v1 = Conversation(
     sep_style=SeparatorStyle.TWO,
     sep=" ",
     sep2="</s>",
+)
+
+conv_zephyr = Conversation(
+    system="A chat between a curious user and an artificial intelligence assistant. "
+    "The assistant gives helpful, detailed, and polite answers to the user's questions.",
+    roles=("<|user|>", "<|assistant|>"),
+    version="v1",
+    messages=(
+        ("<|user|>", "Hi!"),
+        ("<|assistant|>", "Hi there!  How can I help you today?")
+    ),
+    offset=0,
+    sep_style=SeparatorStyle.ZEPHYR,
+    sep="</s>",
 )
 
 default_conversation = conv_v1_2
