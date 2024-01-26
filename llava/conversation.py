@@ -47,12 +47,12 @@ class Conversation:
                     ret += role + ":"
             return ret
         elif self.sep_style == SeparatorStyle.ZEPHYR:
-            ret = f"<|system|>\n{self.system}{self.sep}\n"
+            ret = f"<|system|>\n{self.system}{self.sep}"
             for role, message in self.messages:
                 if message:
                     if type(message) is tuple:
                         message, _, _ = message
-                    ret += f"{role}\n{message}{self.sep}\n"
+                    ret += f"{role}\n{message}{self.sep}"
             return ret
         else:    
             raise ValueError(f"Invalid style: {self.sep_style}")
@@ -328,7 +328,7 @@ conv_zephyr = Conversation(
     ),
     offset=0,
     sep_style=SeparatorStyle.ZEPHYR,
-    sep="</s>",
+    sep="</s>\n",
 )
 
 default_conversation = conv_v1_2
