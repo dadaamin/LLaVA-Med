@@ -343,6 +343,7 @@ conv_templates = {
     "v1": conv_v1_2,
     "bair_v1": conv_bair_v1,
     "vicuna_v1_1": conv_vicuna_v1_1,
+    "zephyr": conv_zephyr,
 }
 
 
