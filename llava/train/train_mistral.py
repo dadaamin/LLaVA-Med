@@ -51,7 +51,7 @@ DEFAULT_IM_END_TOKEN = "<im_end>"
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
-    version: Optional[str] = field(default="v0")
+    version: Optional[str] = field(default="v1")
     freeze_backbone: bool = field(default=False)
     tune_mm_mlp_adapter: bool = field(default=False)
     vision_tower: Optional[str] = field(default=None)
@@ -277,7 +277,85 @@ def preprocess_v1(
         input_ids=input_ids,
         labels=targets,
     )
+def preprocess_zephyr(
+    sources,
+    tokenizer: transformers.PreTrainedTokenizer,
+) -> Dict:
+    conv = conversation_lib.default_conversation.copy()
+    roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
 
+    # Apply prompt templates
+    conversations = []
+    for i, source in enumerate(sources):
+        if roles[source[0]["from"]] != conv.roles[0]:
+            # Skip the first one if it is not from human
+            source = source[1:]
+
+        conv.messages = []
+        for j, sentence in enumerate(source):
+            role = roles[sentence["from"]]
+            assert role == conv.roles[j % 2], f"{i}"
+            conv.append_message(role, sentence["value"])
+        conversations.append(conv.get_prompt())
+    # Tokenize conversations
+    input_ids = tokenizer(
+        conversations,
+        return_tensors="pt",
+        padding="longest",
+        max_length=tokenizer.model_max_length,
+        truncation=True,
+    ).input_ids
+    targets = input_ids.clone()
+
+
+    # Mask targets
+    sep = f"</s>\n<|"
+    for conversation, target in zip(conversations, targets):
+        total_len = int(target.ne(tokenizer.pad_token_id).sum())
+
+        
+        parts = conversation.split(sep)
+        # print(parts)
+
+        # print("Parts:", parts)
+
+        cur_len = 1
+        target[:cur_len] = IGNORE_INDEX
+        for p in parts:
+            
+            if p.startswith("<|system"):
+                instruction_len = len(tokenizer(p).input_ids) - 1
+                # print("Masked out", p)
+                target[cur_len: cur_len + instruction_len] = IGNORE_INDEX
+                cur_len += instruction_len
+                continue
+            
+            instruction_len = len(tokenizer(sep + p).input_ids) - 1
+            if p.startswith("user"):
+                target[cur_len: cur_len + instruction_len] = IGNORE_INDEX
+                # print("Masked out", sep + p)
+
+            elif p.startswith("assistant"):
+                prefix_len = len(tokenizer(f"{sep}assistant|>\n").input_ids) - 1
+                # print("Masked out", f"{sep}assistant|>\n")
+                target[cur_len: cur_len + prefix_len] = IGNORE_INDEX
+            else:
+                print(f"WARNING: Conversation format invalid: {conversation}(Ignored)")
+                target[:] = IGNORE_INDEX
+            cur_len += instruction_len
+
+        if cur_len < tokenizer.model_max_length:
+            if cur_len != total_len:
+                target[:] = IGNORE_INDEX
+                print(
+                    f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
+                    f" (ignored)"
+                )
+
+    return dict(
+        input_ids=input_ids,
+        labels=targets,
+    )
 
 def preprocess(
     sources: Sequence[str],
@@ -291,7 +369,7 @@ def preprocess(
     4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
     """
     if conversation_lib.default_conversation.version == "v1":
-        return preprocess_v1(sources, tokenizer)
+        return preprocess_zephyr(sources, tokenizer)
     # add end signal and concatenate together
     conversations = []
     for source in sources:
@@ -524,7 +602,7 @@ def train():
             })
     else:
         tokenizer.pad_token = tokenizer.unk_token
-        conversation_lib.default_conversation = conversation_lib.conv_templates["vicuna_v1_1"]
+        conversation_lib.default_conversation = conversation_lib.conv_templates["zephyr"]
 
     if model_args.vision_tower is not None:
         model_vision_dict = model.model.initialize_vision_modules(
