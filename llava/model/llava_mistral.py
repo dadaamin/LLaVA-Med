@@ -168,7 +168,10 @@ class LlavaMistralModel(MistralModel):
 
         image_processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-base-patch16")
       
-        vision_tower = self.vision_tower[0]
+        if not hasattr(self, 'vision_tower'):
+            vision_tower = ViTModel.from_pretrained(vision_tower)
+        else:
+            vision_tower = self.vision_tower[0]
         vision_config = vision_tower.config
 
         setattr(vision_tower, 'config', vision_config)
@@ -208,8 +211,10 @@ class LlavaMistralModel(MistralModel):
             image_forward_outs = vision_tower(images, output_hidden_states=True)
             select_hidden_state = image_forward_outs.hidden_states[select_hidden_state_layer]
             image_features = select_hidden_state[:, 1:]
-            dummy_image_features = torch.zeros(256, 1024, device=image_features.device, dtype=image_features.dtype)
-        
+            if "biomed_clip_hf_checkpoint" in self.vision_tower_name:
+                dummy_image_features = torch.zeros(196, 768, device=image_features.device, dtype=image_features.dtype)
+            else:
+                dummy_image_features = torch.zeros(256, 1024, device=image_features.device, dtype=image_features.dtype)
         return image_features, dummy_image_features
 
     def forward(
