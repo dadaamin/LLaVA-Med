@@ -22,7 +22,7 @@ from torch.nn import CrossEntropyLoss
 
 from transformers import AutoConfig, AutoModelForCausalLM, \
                          MistralConfig, MistralModel, MistralForCausalLM, \
-                         CLIPVisionModel, CLIPImageProcessor
+                         CLIPVisionModel, CLIPImageProcessor, ViTModel
 
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from llava.model.utils import *
@@ -49,10 +49,13 @@ class LlavaMistralModel(MistralModel):
         if hasattr(config, "mm_vision_tower"):
             # HACK: for FSDP
             
-            if "BiomedCLIP" in config.mm_vision_tower or "biomed_clip" in config.mm_vision_tower:
+            if "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224" in config.mm_vision_tower:
                 model, _, _ = open_clip.create_model_and_transforms('hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224')
                 self.vision_tower = [model.visual.trunk] # Please refer: https://github.com/mlfoundations/open_clip/blob/main/src/open_clip/timm_model.py#LL60C18-L60C18
                 self.vision_tower_name = "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
+            elif "biomed_clip_hf_checkpoint" in config.mm_vision_tower:
+                # Allow Timm model converted to HF
+                self.vision_tower = [ViTModel.from_pretrained(config.mm_vision_tower)]
             else:
                 self.vision_tower = [CLIPVisionModel.from_pretrained(config.mm_vision_tower)]
 
@@ -63,9 +66,12 @@ class LlavaMistralModel(MistralModel):
     def initialize_vision_modules(self, vision_tower, mm_vision_select_layer,
                                   pretrain_mm_mlp_adapter=None, tune_mm_mlp_adapter=False):
 
-        if "BiomedCLIP" in vision_tower:
+        if "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224" in vision_tower:
             self.vision_tower_name = "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
             return self.initialize_vision_modules_from_biomed_clip(vision_tower, mm_vision_select_layer,
+                                pretrain_mm_mlp_adapter=None, tune_mm_mlp_adapter=False)
+        elif "biomed_clip_hf_checkpoint" in vision_tower:
+            return self.initialize_vision_modules_from_biomed_clip_hf(vision_tower, mm_vision_select_layer,
                                 pretrain_mm_mlp_adapter=None, tune_mm_mlp_adapter=False)
         else:
             return self.initialize_vision_modules_from_openai_clip(vision_tower, mm_vision_select_layer,
@@ -156,12 +162,44 @@ class LlavaMistralModel(MistralModel):
             image_token_len=num_patches,
             vision_config=vision_config
         )
+    def initialize_vision_modules_from_biomed_clip_hf(self, vision_tower, mm_vision_select_layer,
+                                  pretrain_mm_mlp_adapter=None, tune_mm_mlp_adapter=False):
+        self.config.mm_vision_tower = vision_tower
+
+        image_processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-base-patch16")
+      
+        vision_tower = self.vision_tower[0]
+        vision_config = vision_tower.config
+
+        setattr(vision_tower, 'config', vision_config)
+        vision_tower.requires_grad_(False)
+        vision_tower = vision_tower.to(torch.float16)
+        self.vision_tower = [vision_tower]
+
+        num_patches = (vision_config.image_size // vision_config.patch_size) ** 2
+
+        self.config.use_mm_proj = True
+        self.config.mm_hidden_size = vision_config.hidden_size
+        self.config.mm_vision_select_layer = mm_vision_select_layer
+
+        if not hasattr(self, 'mm_projector'):
+            self.mm_projector = nn.Linear(vision_config.hidden_size, self.config.hidden_size)
+
+        if pretrain_mm_mlp_adapter is not None:
+            mm_projector_weights = torch.load(pretrain_mm_mlp_adapter, map_location='cpu')
+            self.mm_projector.load_state_dict({k.split('.')[-1]: v for k, v in mm_projector_weights.items()})
+
+        return dict(
+            image_processor=image_processor,
+            image_token_len=num_patches,
+            vision_config=vision_config
+        )
 
     def extract_visual_features(self, vision_tower, images):
         select_hidden_state_layer = getattr(self.config, "mm_vision_select_layer", -1)
 
         
-        if "BiomedCLIP" in self.vision_tower_name  or "biomed_clip" in self.vision_tower_name:
+        if "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224" in self.vision_tower_name:
             image_forward_outs = vision_tower.get_intermediate_layers(images, n=3) # take last n blocks if n is an int, if in is a sequence, select by matching indices
             image_features = image_forward_outs[select_hidden_state_layer]
             image_features = image_features
