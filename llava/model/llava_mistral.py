@@ -202,7 +202,7 @@ class LlavaMistralModel(MistralModel):
         select_hidden_state_layer = getattr(self.config, "mm_vision_select_layer", -1)
 
         
-        if "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224" in self.vision_tower_name:
+        if "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224" in self.config.mm_vision_tower:
             image_forward_outs = vision_tower.get_intermediate_layers(images, n=3) # take last n blocks if n is an int, if in is a sequence, select by matching indices
             image_features = image_forward_outs[select_hidden_state_layer]
             image_features = image_features
@@ -211,7 +211,7 @@ class LlavaMistralModel(MistralModel):
             image_forward_outs = vision_tower(images, output_hidden_states=True)
             select_hidden_state = image_forward_outs.hidden_states[select_hidden_state_layer]
             image_features = select_hidden_state[:, 1:]
-            if "biomed_clip_hf_checkpoint" in self.vision_tower_name:
+            if "biomed_clip_hf_checkpoint" in self.config.mm_vision_tower:
                 dummy_image_features = torch.zeros(196, 768, device=image_features.device, dtype=image_features.dtype)
             else:
                 dummy_image_features = torch.zeros(256, 1024, device=image_features.device, dtype=image_features.dtype)
