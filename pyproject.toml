@@ -14,9 +14,9 @@ classifiers = [
 ]
 dependencies = [
     "accelerate", "fastapi", "gradio==3.23", "markdown2[all]", "numpy",
-    "requests", "sentencepiece", "tokenizers==0.14.1",
+    "requests", "sentencepiece", "tokenizers==0.15.1",
     "torch", "torchvision", "uvicorn", "wandb",
-    "transformers==4.34.0"
+    "transformers==4.37.2"
 ]
 
 [project.urls]
